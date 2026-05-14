@@ -1,0 +1,30 @@
+# model checkpoints / weights
+checkpoints*/
+**/checkpoints*/
+*.pt
+*.pth
+*.bin
+*.ckpt
+*.safetensors
+*.onnx
+
+# datasets / arrays
+processed_data/
+*.npz
+*.npy
+*.h5
+*.parquet
+
+# outputs / logs
+results/
+results_city/
+ablation_results/
+logs/
+wandb/
+runs/
+
+# system/cache
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.DS_Store
