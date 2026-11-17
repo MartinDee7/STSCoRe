@@ -1,0 +1,36 @@
+{
+  "model": {
+    "base_model": "Qwen/Qwen2.5-7B-Instruct",
+    "hidden_size": 3584,
+    "history": 12,
+    "horizon": 12,
+    "spatial_dim": 4,
+    "time_slots": 288,
+    "lora_rank": 16,
+    "lora_alpha": 32,
+    "lora_dropout": 0.1,
+    "max_new_tokens": 96,
+    "temperature": 0.9,
+    "max_prompt_tokens": 1536
+  },
+  "reward": {
+    "mae": 1.0,
+    "rmse": 1.0,
+    "correlation": 0.35,
+    "slope": 0.5,
+    "flat": 0.4,
+    "flat_threshold": 0.01,
+    "invalid_reward": -10.0,
+    "alpha": 0.5,
+    "beta": 0.3,
+    "improvement_scale": 1.0,
+    "improvement_clip": 5.0
+  },
+  "training": {
+    "batch_size": 1,
+    "gradient_accumulation": 32,
+    "max_grad_norm": 0.5,
+    "epochs": {"sft": 2, "rl1": 2, "rl2": 3, "head": 100, "adapt": 100},
+    "learning_rate": {"sft": 0.000015, "rl1": 0.000003, "rl2": 0.0000005, "head": 0.00001, "adapt": 0.00001}
+  }
+}
