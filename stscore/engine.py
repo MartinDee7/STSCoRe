@@ -39,15 +39,18 @@ class ForecastEngine:
 
     def context(self, batch):
         history = batch["history"].detach().cpu().numpy()[:, :, 0]
-        references, _ = self.bank.search(history)
+        references, reference_ids = self.bank.search(
+            history, nodes=batch["node"].detach().cpu().numpy(),
+            origins=batch["origin"].detach().cpu().numpy())
         contexts, messages = [], []
         for i, (hist, ref) in enumerate(zip(history, references)):
             slot, day = batch["time"][i, -1].tolist()
             numeric = lambda row: ", ".join(f"{x:.4f}" for x in row)
             task = (f"Dataset: {self.dataset}. Slot: {1440 // self.steps_per_day} minutes. "
                     f"Forecast {self.model.cfg.horizon} steps in normalized scale for an unseen sensor. "
-                    f"Weekday index: {day}; last observed slot: {slot}.\n"
-                    f"Similar Pattern (Ref): {numeric(ref)}")
+                    f"Weekday index: {day}; last observed slot: {slot}.")
+            if reference_ids[i] >= 0:
+                task += f"\nSimilar Pattern (Ref): {numeric(ref)}"
             # Context fusion uses task/reference embeddings, not target labels.
             contexts.append(task)
             messages.append([

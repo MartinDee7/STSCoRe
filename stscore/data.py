@@ -144,30 +144,61 @@ class RetrievalBank:
         self.histories = np.asarray(histories, dtype=np.float32)
         self.futures = np.asarray(futures, dtype=np.float32)
         self.nodes, self.origins = np.asarray(nodes), np.asarray(origins)
-        if len(self.histories) == 0 or len(self.histories) != len(self.futures):
+        if (self.histories.ndim != 2 or self.futures.ndim != 2 or len(self.histories) == 0
+                or len(self.histories) != len(self.futures) or self.histories.shape[1] == 0
+                or self.futures.shape[1] == 0 or self.nodes.shape != (len(self.histories),)
+                or self.origins.shape != (len(self.histories),)):
             raise ValueError("empty/misaligned retrieval bank")
+        if not np.isfinite(self.histories).all() or not np.isfinite(self.futures).all():
+            raise ValueError("non-finite retrieval bank")
+        if not np.issubdtype(self.nodes.dtype, np.integer) or not np.issubdtype(self.origins.dtype, np.integer):
+            raise ValueError("retrieval node/origin IDs must be integers")
         centered = self.histories - self.histories.mean(-1, keepdims=True)
         norms = np.linalg.norm(centered, axis=-1, keepdims=True)
         self.unit = centered / np.maximum(norms, 1e-8)
         self.valid = norms[:, 0] > 1e-8
 
     @classmethod
-    def from_fitting(cls, data, nodes, origins, scaler, history=12, horizon=12):
+    def from_fitting(cls, data, nodes, origins, scaler, history=12, horizon=12, *, time_offset=0):
         validate_origins(origins, len(data), history, horizon)
         pairs = [(t, n) for t in origins for n in nodes]
         return cls([scaler.transform(data[t-history:t, n]) for t, n in pairs],
                    [scaler.transform(data[t:t+horizon, n]) for t, n in pairs],
-                   [n for t, n in pairs], [t for t, n in pairs])
+                   [n for t, n in pairs], [t + time_offset for t, n in pairs])
 
-    def search(self, history):
+    def search(self, history, *, nodes, origins):
+        """Exclude a query's future observations from same-node reference windows.
+
+        Origins use absolute dataset coordinates. IDs of -1 mean no eligible
+        reference; the corresponding future row is NaN and must be omitted.
+        """
         query = np.asarray(history, dtype=np.float32)
+        nodes, origins = np.asarray(nodes), np.asarray(origins)
+        if (query.ndim != 2 or query.shape[1] != self.histories.shape[1]
+                or nodes.shape != (len(query),) or origins.shape != (len(query),)
+                or not np.isfinite(query).all()):
+            raise ValueError("query histories and node/origin IDs must be aligned and finite")
+        if not np.issubdtype(nodes.dtype, np.integer) or not np.issubdtype(origins.dtype, np.integer):
+            raise ValueError("query node/origin IDs must be integers")
         centered = query - query.mean(-1, keepdims=True)
-        unit = centered / np.maximum(np.linalg.norm(centered, axis=-1, keepdims=True), 1e-8)
+        norms = np.linalg.norm(centered, axis=-1, keepdims=True)
+        unit = centered / np.maximum(norms, 1e-8)
         score = unit @ self.unit.T
-        score[:, ~self.valid] = -np.inf
-        # Deterministic first candidate for a constant query/all-constant bank.
-        ids = score.argmax(-1)
-        return self.futures[ids], ids
+        same_node = nodes[:, None] == self.nodes[None, :]
+        # Exclude reference histories too, so query-future observations cannot
+        # influence candidate selection through similarity scores.
+        overlaps = ((self.origins[None, :] - self.histories.shape[1]
+                     < origins[:, None] + self.futures.shape[1])
+                    & (self.origins[None, :] + self.futures.shape[1] > origins[:, None]))
+        eligible = (~(same_node & overlaps) & self.valid[None, :]
+                    & (norms > 1e-8) & np.isfinite(score))
+        score[~eligible] = -np.inf
+        has_reference = eligible.any(axis=1)
+        ids = np.full(len(query), -1, dtype=np.int64)
+        ids[has_reference] = score[has_reference].argmax(axis=1)
+        references = np.full((len(query), self.futures.shape[1]), np.nan, dtype=np.float32)
+        references[has_reference] = self.futures[ids[has_reference]]
+        return references, ids
 
     def state(self):
         return {k: getattr(self, k) for k in ("histories", "futures", "nodes", "origins")}
@@ -221,7 +252,8 @@ def load_bundle(path, split_path, *, budget_percent=None, selected_budget=None,
     common = dict(history=history, horizon=horizon, steps_per_day=steps)
     train = Windows(data["train"], nodes, fit_origins, data["spatial"], scaler, time_offset=time_start, **common)
     val = Windows(val_data, nodes, val_origins, data["spatial"], scaler, time_offset=val_offset+time_start, **common)
-    bank = RetrievalBank.from_fitting(data["train"], nodes, fit_origins, scaler, history, horizon)
+    bank = RetrievalBank.from_fitting(data["train"], nodes, fit_origins, scaler, history, horizon,
+                                     time_offset=time_start)
     manifest = {"dataset": dataset_name, "data_sha256": sha256_file(path),
                 "train_nodes": nodes, "evaluation_nodes": eval_nodes, "fitting_origins": fit_origins,
                 "validation_origins": val_origins, "validation_time_offset": val_offset+time_start,

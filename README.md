@@ -1,4 +1,4 @@
-# ST-SCoRe
+# STSCoRe
 
 Implementation and training code for ST-SCoRe, including source training and target adaptation.
 

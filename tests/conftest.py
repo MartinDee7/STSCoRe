@@ -52,6 +52,7 @@ def batch():
     return {"history": torch.linspace(-1, 1, 24).reshape(2, 12, 1),
             "target": torch.linspace(0, 2, 24).reshape(2, 12),
             "time": torch.zeros(2, 12, 2, dtype=torch.long),
+            "node": torch.tensor([10, 11]), "origin": torch.tensor([84, 108]),
             "spatial": torch.tensor([[0.1, 0.2, 0.3, 0.4], [0.2, 0.3, 0.4, 0.5]])}
 
 
